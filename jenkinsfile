@@ -1,0 +1,43 @@
+pipeline {
+  agent any
+  environment {
+    IMAGE_NAME = "yourdockerhubusername/cicd-site"
+    DOCKER_CREDS = "dockerhub-creds"
+  }
+  stages {
+    stage('Checkout Code') {
+      steps {
+        git 'https://github.com/YOURUSERNAME/cicd-site.git'
+      }
+    }
+    stage('Build Docker Image') {
+      steps {
+        sh 'docker build -t $IMAGE_NAME:latest .'
+      }
+    }
+    stage('Push to DockerHub') {
+      steps {
+        withCredentials([usernamePassword(credentialsId: "${DOCKER_CREDS}", usernameVariable: 'USER', passwordVariable: 'PASS')]) {
+          sh '''
+            echo "$PASS" | docker login -u "$USER" --password-stdin
+            docker push $IMAGE_NAME:latest
+          '''
+        }
+      }
+    }
+    stage('Deploy on Web Server') {
+      steps {
+        sshagent(['webserver-ssh']) {
+          sh '''
+            ssh -o StrictHostKeyChecking=no ubuntu@<WEBSERVER-IP> "
+              docker pull $IMAGE_NAME:latest &&
+              docker stop cicd || true &&
+              docker rm cicd || true &&
+              docker run -d --name cicd -p 80:80 $IMAGE_NAME:latest
+            "
+          '''
+        }
+      }
+    }
+  }
+}
